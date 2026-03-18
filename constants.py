@@ -22,7 +22,7 @@ from streamlit import st
 # OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 HOST = st.secrets["HOST"]
-PORT = st.secrets["PORT"]
+PORT = "5432"
 DATABASE = st.secrets["DATABASE"]
 USER =  st.secrets["USER"]
 PASSWORD = st.secrets["PASSWORD"]
