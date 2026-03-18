@@ -71,7 +71,7 @@ You are an expert PostgreSQL query generator. The database contains MGNREGA (Ind
 
 
 # ── CONNECTION ─────────────────────────────────────────────────────────────────
-@st.cache_resource
+# @st.cache_resource
 def get_connection():
     """Return a persistent psycopg2 connection (cached by Streamlit)."""
     try:
