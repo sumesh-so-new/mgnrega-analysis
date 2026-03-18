@@ -1,32 +1,64 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from openai import OpenAI
 from db import TABLE_SCHEMA
-# import streamlit as st
-from constants import OPENAI_API_KEY, HOST, PORT, DATABASE, USER, PASSWORD
+from constants import OPENAI_API_KEY
+
+# ── APP ────────────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="MGNREGA Text-to-SQL API",
+    description="Converts natural language questions into PostgreSQL SELECT queries.",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── CLIENT ─────────────────────────────────────────────────────────────────────
-@st.cache_resource
-def get_openai_client():
-    api_key = OPENAI_API_KEY
-    if not api_key:
-        st.error("❌ OPENAI_API_KEY not found in Streamlit secrets.")
-        return None
-    return OpenAI(api_key=api_key)
+def get_openai_client() -> OpenAI:
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
+    return OpenAI(api_key=OPENAI_API_KEY)
 
 
-# ── TEXT → SQL ─────────────────────────────────────────────────────────────────
-def generate_sql(natural_language_query: str) -> tuple[str | None, str | None]:
+# ── SCHEMAS ────────────────────────────────────────────────────────────────────
+class SQLRequest(BaseModel):
+    query: str  # Natural language question from the user
+
+class SQLResponse(BaseModel):
+    sql: str    # Generated PostgreSQL SELECT statement
+
+
+# ── ROUTES ─────────────────────────────────────────────────────────────────────
+@app.get("/health")
+def health_check():
+    """Simple liveness probe."""
+    return {"status": "ok"}
+
+
+@app.post("/generate-sql", response_model=SQLResponse)
+def generate_sql(request: SQLRequest) -> SQLResponse:
     """
-    Convert *natural_language_query* to a PostgreSQL SELECT statement.
-    Returns (sql_string, None) or (None, error_message).
+    Convert a natural-language question into a PostgreSQL SELECT statement.
+
+    - **query**: Plain-English question about MGNREGA data.
+
+    Returns the raw SQL string ready to execute against the database.
 
     Model choice: gpt-4o
       • Best accuracy for complex schema understanding & SQL generation
       • Understands table-naming conventions, quoting rules, type casting
       • Faster & cheaper than o1/o3 while still highly capable for SQL tasks
     """
+    if not request.query.strip():
+        raise HTTPException(status_code=422, detail="Query must not be empty.")
+
     client = get_openai_client()
-    if client is None:
-        return None, "OpenAI client not initialised."
 
     system_prompt = (
         TABLE_SCHEMA
@@ -36,17 +68,22 @@ def generate_sql(natural_language_query: str) -> tuple[str | None, str | None]:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",          # Best accuracy for SQL generation tasks
-            temperature=0,           # Deterministic output for SQL
+            model="gpt-4o",     # Best accuracy for SQL generation tasks
+            temperature=0,      # Deterministic output for SQL
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": natural_language_query},
+                {"role": "user",   "content": request.query},
             ],
         )
         sql = response.choices[0].message.content.strip()
+
         # Strip accidental markdown code fences
         if sql.startswith("```"):
             sql = sql.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        return sql, None
+
+        return SQLResponse(sql=sql)
+
+    except HTTPException:
+        raise
     except Exception as e:
-        return None, str(e)
+        raise HTTPException(status_code=500, detail=f"SQL generation failed: {str(e)}")
