@@ -1,6 +1,6 @@
 from openai import OpenAI
 from db import TABLE_SCHEMA
-import streamlit as st
+# import streamlit as st
 from constants import OPENAI_API_KEY, HOST, PORT, DATABASE, USER, PASSWORD
 
 # ── CLIENT ─────────────────────────────────────────────────────────────────────
